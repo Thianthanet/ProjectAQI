@@ -1,54 +1,79 @@
 import requests
-import csv
-from datetime import datetime
 import time
+import pandas as pd
+from datetime import datetime
 
-# API endpoint
-api_url = "http://api.airvisual.com/v2/city"
-api_key = "7e175a5b-f000-4f22-bd75-8757dd1c94b3"
 
-# Specify city, state, and country
-city = "Yangon"
-state = "Yangon"
-country = "Myanmar"
+API_KEY = "7e175a5b-f000-4f22-bd75-8757dd1c94b3" # Your API KEY here
+API_URL = "http://api.airvisual.com/v2/city" 
+EXCEL_FILE_PATH = "air_quality_data.xlsx"
 
-# Construct the API request URL
-api_request_url = f"{api_url}?city={city}&state={state}&country={country}&key={api_key}"
+def fetch_data_from_api():
+    params = {
+        "city": "Yangon", # Your city
+        "state": "Yangon", # Your state
+        "country": "Myanmar", # Your country
+        "key": API_KEY
+    }
 
-# Set the interval for fetching data (in seconds)
-fetch_interval = 3600  # 1 hour
+    try:
+        response = requests.get(API_URL, params=params)
+        if response.status_code == 200:
+            data = response.json()
+            return data
+        else:
+            print("Error:", response.status_code)
+            return None
 
-try:
-    while True:
-        # Make the API request
-        response = requests.get(api_request_url)
-        data = response.json()
+    except Exception as e:
+        print("An error occurred:", str(e))
+        return None
 
-        # Extract relevant information
-        aqi = data['data']['current']['pollution']['aqius']
-        date = datetime.now().strftime("%Y-%m-%d")
-        time_now = datetime.now().strftime("%H:%M:%S")
 
-        # Print the obtained information
-        print(f"AQI: {aqi}")
-        print(f"Date: {date}")
-        print(f"Time: {time_now}")
+# Set the end date and time (February 1, 2024, 00:00:00)
+end_datetime = pd.to_datetime("2024-01-26 00:00:00")
 
-        # Save the data to a CSV file
-        csv_filename = "air_quality_data.csv"
-        with open(csv_filename, mode='a', newline='') as csv_file:
-            csv_writer = csv.writer(csv_file)
-            # Write header if the file is empty
-            if csv_file.tell() == 0:
-                csv_writer.writerow(["AQI", "Date", "Time"])
-            csv_writer.writerow([aqi, date, time_now])
+columns = ["City", "State", "Country", "Latitude", "Longitude", "AQI (US)", "Main (US)", "AQI (CN)", "Main (CN)", "Timestamp", "Temperature", "Pressure", "Humidity", "Wind Speed", "Wind Direction", "Weather Icon"]
+data_df = pd.DataFrame(columns=columns)
+# Count 1 hour to fetch the API
+fetch_interval_seconds = 3600
 
-        print(f"Data saved to {csv_filename}")
+while pd.to_datetime("now") < end_datetime:
+    data = fetch_data_from_api()
+    if data:
+        city = data['data']['city']
+        state = data['data']['state']
+        country = data['data']['country']
+        coordinates = data['data']['location']['coordinates']
+        pollution_data = data['data']['current']['pollution']
+        weather_data = data['data']['current']['weather']
+        
+        current_timestamp = pd.to_datetime("now")
 
-        # Wait for the next interval before making the next API request
-        time.sleep(fetch_interval)
+        data_df = data_df._append({
+            "City": city,
+            "State": state,
+            "Country": country,
+            "Latitude": coordinates[1],
+            "Longitude": coordinates[0],
+            "AQI (US)": pollution_data['aqius'],
+            "Main (US)": pollution_data['mainus'],
+            "AQI (CN)": pollution_data['aqicn'],
+            "Main (CN)": pollution_data['maincn'],
+            "Timestamp": current_timestamp,
+            "Temperature": weather_data['tp'],
+            "Pressure": weather_data['pr'],
+            "Humidity": weather_data['hu'],
+            "Wind Speed": weather_data['ws'],
+            "Wind Direction": weather_data['wd'],
+            "Weather Icon": weather_data['ic']
+        }, ignore_index=True)
+        print("Now Data : " , datetime.now() , '\n')
+        print(data_df)
+        # Change your name of CSV file here
+        data_df.to_csv('AQI_PM2_5_Myanmar.csv', mode='a', index=False, header=not pd.DataFrame(columns=columns).empty)
 
-except requests.exceptions.RequestException as e:
-    print(f"Error fetching data from the API: {e}")
-except KeyboardInterrupt:
-    print("Data fetching stopped.")
+    # Wait for the specified interval before making the next request
+    time.sleep(fetch_interval_seconds)
+
+data_df.to_csv('data_until_2024-02-01.csv', index=False)
